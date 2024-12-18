@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Upload</title>
+    <style>
+        .upload-container {
+            margin: 20px;
+            text-align: center;
+        }
+
+        .upload-button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .upload-button:hover {
+            background-color: #45a049;
+        }
+
+        #file-name {
+            margin-top: 10px;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="upload-container">
+        <input type="file" id="file-upload" style="display: none">
+        <button class="upload-button" onclick="document.getElementById('file-upload').click()">
+            Choose File
+        </button>
+        <div id="file-name"></div>
+        <div id="upload-progress"></div>
+    </div>
+
+    <script>
+        const CHUNK_SIZE = 1 * 1024 * 1024; // 1MB chunks
+
+        async function uploadChunk(chunk, filename, chunkIndex, totalChunks) {
+            const reader = new FileReader();
+
+            return new Promise((resolve, reject) => {
+                reader.onload = async () => {
+                    try {
+                        const base64Data = reader.result.split(',')[1];
+                        const response = await fetch('http://localhost:3000/upload', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                chunk: base64Data,
+                                filename,
+                                chunkIndex,
+                                totalChunks
+                            })
+                        });
+                        const result = await response.json();
+                        resolve(result);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.readAsDataURL(chunk);
+            });
+        }
+
+        async function mergeChunks(filename, totalChunks) {
+            const response = await fetch('http://localhost:3000/merge', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename,
+                    totalChunks
+                })
+            });
+            return response.json();
+        }
+
+        document.getElementById('file-upload').addEventListener('change', async function (e) {
+            e.preventDefault()
+
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const fileName = file.name;
+            document.getElementById('file-name').textContent = fileName;
+
+            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+            const progressDiv = document.getElementById('upload-progress');
+
+            try {
+                // Upload chunks
+                for (let i = 0; i < totalChunks; i++) {
+                    const chunk = file.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+                    await uploadChunk(chunk, fileName, i, totalChunks);
+
+                    // Update progress
+                    const progress = Math.round(((i + 1) / totalChunks) * 100);
+                    progressDiv.textContent = `Uploading: ${progress}%`;
+                }
+
+                // Merge chunks
+                const mergeResult = await mergeChunks(fileName, totalChunks);
+                progressDiv.textContent = 'Upload complete!';
+            } catch (error) {
+                console.error('Upload failed:', error);
+                progressDiv.textContent = 'Upload failed!';
+            }
+        });
+    </script>
+</body>
+
+</html>
